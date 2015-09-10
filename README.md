@@ -16,7 +16,7 @@ $ npm install --save mcpe-ping
 ```js
 var mcpeping = require('mcpe-ping');
 
-mcpeing('example.com', 19132, function(err, res) {
+mcpeping('example.com', 19132, function(err, res) {
     if (err) {
         // Some kind of error
         console.error(err);

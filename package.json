@@ -1,6 +1,6 @@
 {
   "name": "mcpe-ping",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Pings an MCPE server for simple data.",
   "homepage": "https://github.com/Falkirks/mcpe-ping",
   "author": {

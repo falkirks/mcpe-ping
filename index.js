@@ -98,9 +98,17 @@ var ping = function (server, port, callback, timeout) {
     var client = dgram.createSocket("udp4");
     client.bind({port: port});
     var broadcastIntervalId = setInterval((function () {
-      var ping = new UNCONNECTED_PING(new Date().getTime() - START_TIME);
-      ping.encode();
-      client.send(ping.bb.buffer, 0, ping.bb.buffer.length, MCPE_DEFAULT_PORT, server);
+      try {
+        var ping = new UNCONNECTED_PING(new Date().getTime() - START_TIME);
+        ping.encode();
+        client.send(ping.bb.buffer, 0, ping.bb.buffer.length, MCPE_DEFAULT_PORT, server);
+      }
+      catch(e){
+        clearInterval(broadcastIntervalId);
+        clearTimeout(timeoutId);
+        client.close();
+        callback({error: true, description: "Error sending ping."}, null);
+      }
     }).bind(this), 100);
     var timeoutId = setTimeout(function(){
       clearInterval(broadcastIntervalId);

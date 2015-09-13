@@ -8,4 +8,9 @@ describe('mcpe-ping node module', function () {
       assert(null, err);
     }, 5000);
   });
+  it('must be able to ping a.a', function () {
+    mcpeping('a.a', 19132, function(err) {
+      assert(err, {error: true, description: "Error sending ping."});
+    }, 5000);
+  });
 });

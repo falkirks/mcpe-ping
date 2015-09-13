@@ -145,6 +145,7 @@ var pingIP = function (server, port, callback, timeout) {
           'game': pong.gameId,
           'version': pong.gameVersion,
           'name': pong.name,
+          'cleanName': pong.name.replace(/\xA7[0-9A-FK-OR]/ig, ''),
           'currentPlayers': pong.currentPlayers,
           'maxPlayers': pong.maxPlayers,
           'ackId': new Date().getTime() - START_TIME,

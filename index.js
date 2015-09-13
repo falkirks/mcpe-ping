@@ -2,6 +2,7 @@
 var dgram = require('dgram');
 var ByteBuffer = require('bytebuffer');
 var portfinder = require('portfinder');
+var dns = require('dns');
 
 var START_TIME = new Date().getTime();
 var RAKNET = {
@@ -94,57 +95,78 @@ var ping = function (server, port, callback, timeout) {
   if (typeof timeout === "undefined") {
     timeout = 5000;
   }
-  portfinder.getPort((function (err, port) {
-    var client = dgram.createSocket("udp4");
-    client.bind({port: port});
-    var broadcastIntervalId = setInterval((function () {
-      try {
-        var ping = new UNCONNECTED_PING(new Date().getTime() - START_TIME);
-        ping.encode();
-        client.send(ping.bb.buffer, 0, ping.bb.buffer.length, MCPE_DEFAULT_PORT, server);
+  if(checkIsIPV4(server)){
+    pingIP(server, port, callback, timeout)
+  }
+  else{
+    dns.lookup(server, function(err, res){
+      if(err === null){
+        pingIP(res, port, callback, timeout);
       }
-      catch(e){
+      else{
+        callback({error: true, description: "DNS lookup failed."}, null);
+      }
+    });
+  }
+
+};
+var pingIP = function (server, port, callback, timeout) {
+  var client = dgram.createSocket("udp4");
+  var broadcastIntervalId = setInterval((function () {
+    try {
+      var ping = new UNCONNECTED_PING(new Date().getTime() - START_TIME);
+      ping.encode();
+      client.send(ping.bb.buffer, 0, ping.bb.buffer.length, port, server);
+    }
+    catch(e){
+      clearInterval(broadcastIntervalId);
+      clearTimeout(timeoutId);
+      client.close();
+      callback({error: true, description: "Error sending ping."}, null);
+    }
+  }).bind(this), 100);
+  var timeoutId = setTimeout(function(){
+    clearInterval(broadcastIntervalId);
+    client.close();
+    callback({error: true, description: "Ping session timed out."}, null);
+  }, timeout);
+  client.on("message", ((function (msg, rinfo) {
+    var buf = new ByteBuffer().append(msg, "hex").flip();
+    var id = buf.buffer[0];
+    switch (id) {
+      case RAKNET.UNCONNECTED_PONG:
+        var pong = new UNCONNECTED_PONG(buf);
+        pong.decode();
+        var clientData = {
+          'rinfo': rinfo,
+          'advertise': pong.advertiseString,
+          'serverId': pong.serverId,
+          'pingId': pong.pingId,
+          'game': pong.gameId,
+          'version': pong.gameVersion,
+          'name': pong.name,
+          'currentPlayers': pong.currentPlayers,
+          'maxPlayers': pong.maxPlayers,
+          'ackId': new Date().getTime() - START_TIME,
+          'connected': true
+        };
         clearInterval(broadcastIntervalId);
         clearTimeout(timeoutId);
         client.close();
-        callback({error: true, description: "Error sending ping."}, null);
-      }
-    }).bind(this), 100);
-    var timeoutId = setTimeout(function(){
-      clearInterval(broadcastIntervalId);
-      client.close();
-      callback({error: true, description: "Ping session timed out."}, null);
-    }, timeout);
-    client.on("message", ((function (msg, rinfo) {
-      var buf = new ByteBuffer().append(msg, "hex").flip();
-      var id = buf.buffer[0];
-      switch (id) {
-        case RAKNET.UNCONNECTED_PONG:
-          var pong = new UNCONNECTED_PONG(buf);
-          pong.decode();
-          var clientData = {
-            'rinfo': rinfo,
-            'advertise': pong.advertiseString,
-            'serverId': pong.serverId,
-            'pingId': pong.pingId,
-            'game': pong.gameId,
-            'version': pong.gameVersion,
-            'name': pong.name,
-            'currentPlayers': pong.currentPlayers,
-            'maxPlayers': pong.maxPlayers,
-            'ackId': new Date().getTime() - START_TIME,
-            'connected': true
-          };
-          clearInterval(broadcastIntervalId);
-          clearTimeout(timeoutId);
-          client.close();
-          callback(null, clientData);
-          break;
-        default:
-          break;
-      }
-    }).bind(this)));
-  }).bind(this));
+        callback(null, clientData);
+        break;
+      default:
+        break;
+    }
+  }).bind(this)));
 };
-
+function checkIsIPV4(entry) {
+  var blocks = entry.split(".");
+  if(blocks.length === 4) {
+    return blocks.every(function(block) {
+      return parseInt(block,10) >=0 && parseInt(block,10) <= 255;
+    });
+  }
+  return false;
+}
 module.exports = ping;

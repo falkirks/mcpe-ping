@@ -52,6 +52,7 @@ UNCONNECTED_PING.prototype.encode = function () {
   this.bb
     .writeLong(this.pingId)
     .append(RAKNET.MAGIC, "hex")
+    .writeLong(0)
     .flip()
     .compact();
 };

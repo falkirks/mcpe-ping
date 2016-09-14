@@ -4,6 +4,8 @@
 
 This is a port of `mc-ping` for MCPE. 
 
+This library was written using code from the DirtServer project.
+
 ## Install
 
 ```sh

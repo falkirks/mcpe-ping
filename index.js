@@ -41,6 +41,7 @@ var RAKNET = {
   NACK: 0xa0,
   ACK: 0xc0
 };
+
 var UNCONNECTED_PING = function (pingId) {
   this.bb = new ByteBuffer();
   this.bb.buffer[0] = RAKNET.UNCONNECTED_PING;
@@ -82,7 +83,82 @@ UNCONNECTED_PONG.prototype.decode = function () {
   this.maxPlayers = splitString[5];
 };
 
-var ping = function (server, port, callback, timeout) {
+var QUERY = {
+  STATISTIC: 0x00,
+  HANDSHAKE: 0x09,
+  MAGIC: 'fefd',
+  KEYVAL_START: 128,
+  KEYVAL_END: 1
+};
+var CHALLENGE = function (buf) {
+  this.bb = new ByteBuffer();
+};
+CHALLENGE.prototype.encode = function () {
+  //console.log(this.pingId);
+  this.bb
+    .append(QUERY.MAGIC, "hex")
+    .writeByte(QUERY.HANDSHAKE)
+    .writeInt32(1)
+    .flip()
+    .compact();
+};
+var CHALLENGE_RESPONSE = function (buf) {
+  this.bb = buf;
+  this.bb.offset = 1;
+};
+CHALLENGE_RESPONSE.prototype.decode = function () {
+  this.clientId = this.bb.readInt32();
+  //console.log(this.pingId);
+  var bb = this.bb.slice(5);
+  this.challengeToken = parseInt(bb.toString('utf8'), 10);
+};
+
+var STAT_REQUEST = function(challengeToken){
+  this.bb = new ByteBuffer();
+  this.challengeToken = challengeToken;
+};
+STAT_REQUEST.prototype.encode = function () {
+  //console.log(this.pingId);
+  this.bb
+    .append(QUERY.MAGIC, "hex")
+    .writeByte(QUERY.STATISTIC)
+    .writeInt32(1)
+    .writeInt32(this.challengeToken)
+    .writeInt32(0)
+    .flip()
+    .compact();
+};
+
+var STAT_RESPONSE = function(buf){
+  this.bb = buf;
+  this.bb.offset = 16;
+};
+STAT_RESPONSE.prototype.decode = function () {
+  this.data = {};
+  this.players = [];
+
+  var key;
+  var value;
+  while (this.bb.readUint16(this.bb.offset) !== QUERY.KEYVAL_END) {
+    key = readString(this.bb);
+    value = readString(this.bb);
+    this.data[key] = value;
+  }
+  this.bb.offset += 11;
+
+  var player = readString(this.bb);
+  while (player.length >= 1) {
+    this.players.push(player);
+    player = readString(this.bb);
+  }
+};
+
+
+var ping = function (server, port, callback, timeout, fullQuery) {
+  if(typeof timeout == "boolean" && typeof timeout === "undefined"){
+    fullQuery = timeout;
+    timeout = undefined;
+  }
   var MCPE_DEFAULT_PORT = 19132;
   if (typeof port === "function") {
     callback = port;
@@ -97,12 +173,22 @@ var ping = function (server, port, callback, timeout) {
     timeout = 5000;
   }
   if(checkIsIPV4(server)){
-    pingIP(server, port, callback, timeout)
+    if(fullQuery){
+      query(server, port, callback, timeout);
+    }
+    else{
+      pingIP(server, port, callback, timeout);
+    }
   }
   else{
     dns.lookup(server, function(err, res){
       if(err === null){
-        pingIP(res, port, callback, timeout);
+        if(fullQuery){
+          query(res, port, callback, timeout);
+        }
+        else{
+          pingIP(res, port, callback, timeout);
+        }
       }
       else{
         callback({error: true, description: "DNS lookup failed."}, null);
@@ -110,6 +196,60 @@ var ping = function (server, port, callback, timeout) {
     });
   }
 
+};
+var query = function(server, port, callback, timeout){
+  var client = dgram.createSocket("udp4");
+  client.on("message", ((function (msg, rinfo) {
+    var buf = new ByteBuffer().append(msg, "hex").flip();
+    var id = buf.buffer[0];
+    switch (id) {
+      case QUERY.HANDSHAKE:
+        var pong = new CHALLENGE_RESPONSE(buf);
+        pong.decode();
+
+        var statRequest = new STAT_REQUEST(pong.challengeToken);
+        statRequest.encode();
+        client.send(statRequest.bb.buffer, 0, statRequest.bb.buffer.length, port, server);
+        break;
+      case QUERY.STATISTIC:
+        var stats = new STAT_RESPONSE(buf);
+        stats.decode();
+        var clientData = {
+          'rinfo': rinfo,
+          'hostname': stats.data.hostname,
+          'gametype': stats.data.gametype,
+          'game': stats.data.gameId,
+          'version': stats.data.version,
+          'serverEngine': stats.data['server_engine'],
+          'plugins': stats.data.plugins,
+          'map': stats.data.map,
+          'currentPlayers': stats.data.numplayers,
+          'maxPlayers': stats.data.maxplayers,
+          'whitelist': (stats.data.whitelist === "on"),
+          'hostIp': stats.data.hostip,
+          'hostPort': stats.data.hostport,
+          'ackId': new Date().getTime() - START_TIME,
+          'players': stats.players,
+          'connected': true
+        };
+        client.close();
+        callback(null, clientData);
+        break;
+      default:
+        callback({error: true, description: "Bad packet response."}, null);
+        client.close();
+        break;
+    }
+  }).bind(this)));
+  try {
+    var challenge = new CHALLENGE();
+    challenge.encode();
+    client.send(challenge.bb.buffer, 0, challenge.bb.buffer.length, port, server);
+  }
+  catch(e){
+    client.close();
+    callback({error: true, description: "Error sending ping."}, null);
+  }
 };
 var pingIP = function (server, port, callback, timeout) {
   var client = dgram.createSocket("udp4");
@@ -170,5 +310,14 @@ function checkIsIPV4(entry) {
     });
   }
   return false;
+}
+function readString(bb) {
+  var start = bb.offset;
+  var b = bb.readUInt8();
+  while (b !== 0x0) {
+    b = bb.readUInt8();
+  }
+
+  return bb.toString('utf8', start, bb.offset - 1);
 }
 module.exports = ping;

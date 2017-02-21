@@ -253,7 +253,7 @@ var query = function(server, port, callback, timeout){
 };
 var pingIP = function (server, port, callback, timeout) {
   var client = dgram.createSocket("udp4");
-  var broadcastIntervalId = setInterval((function () {
+  var broadcastPing = (function () {
     try {
       var ping = new UNCONNECTED_PING(new Date().getTime() - START_TIME);
       ping.encode();
@@ -265,7 +265,9 @@ var pingIP = function (server, port, callback, timeout) {
       client.close();
       callback({error: true, description: "Error sending ping."}, null);
     }
-  }).bind(this), 100);
+  });
+  broadcastPing();
+  var broadcastIntervalId = setInterval(broadcastPing.bind(this), 400);
   var timeoutId = setTimeout(function(){
     clearInterval(broadcastIntervalId);
     client.close();
@@ -298,6 +300,7 @@ var pingIP = function (server, port, callback, timeout) {
         callback(null, clientData);
         break;
       default:
+        console.log(id);
         break;
     }
   }).bind(this)));

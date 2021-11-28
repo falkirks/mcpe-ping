@@ -324,3 +324,4 @@ function readString(bb) {
   return bb.toString('utf8', start, bb.offset - 1);
 }
 module.exports = ping;
+module.exports.promise = ({ip, port, timeout}) => new Promise((x, y) => ping(ip, port * 1, (e, r) => e ? y(e) : x(r), timeout || 3000));
